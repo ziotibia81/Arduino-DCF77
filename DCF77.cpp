@@ -18,26 +18,26 @@
   
   11 Apr 2012 - initial release 
   23 Apr 2012 - added UTC support
-  2  Jul 2012 - minor bugfix and additional noise rejection
+   2 Jul 2012 - minor bugfix and additional noise rejection
+  17 Jul 2014 - added Meteotime routines by Bas Kasteel
 */
 
 #include <DCF77.h>       //https://github.com/thijse/Arduino-Libraries/downloads
-#include <TimeLib.h>        //http://playground.arduino.cc/code/time
-#include <Utils.h>
+#include <Time.h>        //http://www.arduino.cc/playground/Code/Time
 
-#define _DCF77_VERSION 1_0_0 // software version of this library
 
-using namespace Utils;
+#define _DCF77_VERSION 0_9_8 // software version of this library
+#define VERBOSE_DEBUG 1	     // Verbose
+
 
 /**
  * Constructor
  */
 DCF77::DCF77(int DCF77Pin, int DCFinterrupt, bool OnRisingFlank) 
 {
-	dCF77Pin     = DCF77Pin;
-	dCFinterrupt = DCFinterrupt;	
-	pulseStart   = OnRisingFlank ? HIGH : LOW;
-	
+	dCF77Pin = DCF77Pin;
+	dCFinterrupt = DCFinterrupt;
+	pulseStart   = OnRisingFlank ? HIGH : LOW;	
 	if (!initialized) {  
 		pinMode(dCF77Pin, INPUT);	
 		initialize();
@@ -93,23 +93,30 @@ inline void DCF77::bufferinit(void)
  * Interrupt handler that processes up-down flanks into pulses and stores these in the buffer
  */
 void DCF77::int0handler() {
-	int flankTime = millis();
-	byte sensorValue = digitalRead(dCF77Pin);
+	long flankTime = millis();
+	int sensorValue = digitalRead(dCF77Pin);
 
 	// If flank is detected quickly after previous flank up
 	// this will be an incorrect pulse that we shall reject
 	if ((flankTime-PreviousLeadingEdge)<DCFRejectionTime) {
-		LogLn("rCT");
+		#ifdef VERBOSE_DEBUG
+		Serial.print(" rCT ");
+		Serial.print(PreviousLeadingEdge);
+		Serial.print(" ");
+		Serial.println(flankTime);
+		Serial.println(" ");
+		#endif
 		return;
 	}
 	
 	// If the detected pulse is too short it will be an
 	// incorrect pulse that we shall reject as well
 	if ((flankTime-leadingEdge)<DCFRejectPulseWidth) {
-	    LogLn("rPW");
+		#ifdef VERBOSE_DEBUG
+		Serial.println(" rPW");
+		#endif
 		return;
 	}
-	
 	if(sensorValue==pulseStart) {
 		if (!Up) {
 			// Flank up
@@ -121,13 +128,18 @@ void DCF77::int0handler() {
 			// Flank down
 			trailingEdge=flankTime;
 			int difference=trailingEdge - leadingEdge;            
-          		
-			if ((leadingEdge-PreviousLeadingEdge) > DCFSyncTime) {
-				finalizeBuffer();
-			}         
+  			// Distinguish between long and short pulses		
+       		if ((leadingEdge-PreviousLeadingEdge) > DCFSyncTime) {
+			finalizeBuffer();
+			}
 			PreviousLeadingEdge = leadingEdge;       
-			// Distinguish between long and short pulses
-			if (difference < DCFSplitTime) { appendSignal(0); } else { appendSignal(1); }
+			if (difference < DCFSplitTime)
+				{ 
+					appendSignal(0);
+				} else 
+				{ 
+					appendSignal(1);
+				}	
 			Up = false;	 
 		}
 	}  
@@ -137,13 +149,35 @@ void DCF77::int0handler() {
  * Add new bit to buffer
  */
 inline void DCF77::appendSignal(unsigned char signal) {
-	Log(signal, DEC);
-	runningBuffer = runningBuffer | ((unsigned long long) signal << bufferPosition);  
+    if ((bufferPosition==15) | (bufferPosition==21) | (bufferPosition==29) | (bufferPosition==36) | (bufferPosition==42) | (bufferPosition==45) | (bufferPosition==50)) {
+	#ifdef VERBOSE_DEBUG
+	  Serial.print("-");
+	#endif
+	}
+	runningBuffer = runningBuffer | ((unsigned long long) signal << bufferPosition); 	
+	if (bufferPosition >3) {
+	#ifdef VERBOSE_DEBUG
+	  Serial.print(signal);
+	#endif	
+	}
+	
+	if (bufferPosition==3) {
+		for (int j=0;j<4;j++) {
+	  	bool p = (runningBuffer >> j) & 1;
+		#ifdef VERBOSE_DEBUG
+		Serial.print(p);
+	    if (j==0) {Serial.print("-");}
+		#endif
+	  } 
+	}
+
 	bufferPosition++;
 	if (bufferPosition > 59) {
 		// Buffer is full before at end of time-sequence 
 		// this may be due to noise giving additional peaks
-		LogLn("EoB");
+		#ifdef VERBOSE_DEBUG
+		Serial.println(" EoB");
+		#endif
 		finalizeBuffer();
 	}
 }
@@ -154,16 +188,20 @@ inline void DCF77::appendSignal(unsigned char signal) {
 inline void DCF77::finalizeBuffer(void) {
   if (bufferPosition == 59) {
 		// Buffer is full
-		LogLn("BF");
+		#ifdef VERBOSE_DEBUG
+		Serial.println(" BF ");
+		#endif
 		// Prepare filled buffer and time stamp for main loop
 		filledBuffer = runningBuffer;
 		filledTimestamp = now();
 		// Reset running buffer
 		bufferinit();
-		FilledBufferAvailable = true;    
+		FilledBufferAvailable = true;   
     } else {
 		// Buffer is not yet full at end of time-sequence
-		LogLn("EoM");
+		#ifdef VERBOSE_DEBUG
+		Serial.println(" EoM");
+		#endif
 		// Reset running buffer
 		bufferinit();      
     }
@@ -180,7 +218,9 @@ bool DCF77::receivedTimeUpdate(void) {
 	}
 	// if buffer is filled, we will process it and see if this results in valid parity
 	if (!processBuffer()) {
-		LogLn("Invalid parity");
+		#ifdef VERBOSE_DEBUG
+		Serial.println("Invalid parity");
+		#endif
 		return false;
 	}
 	
@@ -188,14 +228,20 @@ bool DCF77::receivedTimeUpdate(void) {
 	// we will do some sanity checks on the time
 	time_t processedTime = latestupdatedTime + (now() - processingTimestamp);
 	if (processedTime<MIN_TIME || processedTime>MAX_TIME) {
-		LogLn("Time outside of bounds");
+		#ifdef VERBOSE_DEBUG
+		Serial.println("Time outside of bounds");
+		#endif
 		return false;
 	}
 
 	// If received time is close to internal clock (2 min) we are satisfied
 	time_t difference = abs(processedTime - now());
 	if(difference < 2*SECS_PER_MIN) {
-		LogLn("close to internal clock");
+	    /*
+		#ifdef VERBOSE_DEBUG
+		Serial.println("Close to internal clock");
+		#endif
+        */		
 		storePreviousTime();
 		return true;
 	}
@@ -207,10 +253,14 @@ bool DCF77::receivedTimeUpdate(void) {
 	time_t shiftDifference = abs(shiftCurrent-shiftPrevious);
 	storePreviousTime();
 	if(shiftDifference < 2*SECS_PER_MIN) {
-		LogLn("time lag consistent");		
+		//#ifdef VERBOSE_DEBUG
+	    //Serial.println("Time lag consistent");
+	    //#endif		
 		return true;
 	} else {
-		LogLn("time lag inconsistent");
+		#ifdef VERBOSE_DEBUG
+		Serial.println("Time lag inconsistent");
+		#endif	
 	}
 	
 	// If lag is inconsistent, this may be because of no previous stored date 
@@ -234,7 +284,6 @@ void DCF77::calculateBufferParities(void) {
 	flags.parityFlag = 0;	
 	for(int pos=0;pos<59;pos++) {
 		bool s = (processingBuffer >> pos) & 1;  
-		
 		// Update the parity bits. First: Reset when minute, hour or date starts.
 		if (pos ==  21 || pos ==  29 || pos ==  36) {
 			flags.parityFlag = 0;
@@ -261,10 +310,9 @@ bool DCF77::processBuffer(void) {
 	// Copy filled buffer and timestamp from interrupt driven loop
 	processingBuffer = filledBuffer;
 	processingTimestamp = filledTimestamp;
-	// Indicate that there is no filled, unprocessed buffer anymore
-	FilledBufferAvailable = false;  
-	
 
+	// Indicate that there is no filled, unprocessed buffer anymore
+	FilledBufferAvailable = false;
 	/////  End interaction with interrupt driven loop   /////
 
 	//  Calculate parities for checking buffer
@@ -275,7 +323,6 @@ bool DCF77::processBuffer(void) {
 	struct DCF77Buffer *rx_buffer;
 	rx_buffer = (struct DCF77Buffer *)(unsigned long long)&processingBuffer;
 
-	
 	// Check parities
     if (flags.parityMin == rx_buffer->P1  &&
         flags.parityHour == rx_buffer->P2 &&
@@ -292,7 +339,63 @@ bool DCF77::processBuffer(void) {
 	  latestupdatedTime = makeTime(time);	 
 	  CEST = rx_buffer->CEST;
 	  //Parity correct
+	  //Serial.print(time.Minute,DEC);Serial.println(" ");
+	  DCF77::DCFminute=time.Minute;	  
+	  DCF77::DCFhour=time.Hour;
+//**********************************************************
+	  if ((time.Minute+2)%3 == 0) {weatherBuffer=0;keyBuffer=0;}
+	  for (int j=1;j<15;j++) {
+      weatherBuffer = weatherBuffer | ((unsigned long long) ((filledBuffer>>j) & 1 ) << (((time.Minute+2)%3)*14)+j);	  
+	  }
+	  if ((time.Minute+2)%3 == 1) {
+	  for (int j=0;j<44;j++) {
+	  keyBuffer = keyBuffer | ((unsigned long long) ((filledBuffer>>(j+15)) & 1 ) << j);   
+	  }
+	  }
+	  
+		#ifdef VERBOSE_DEBUG
+		Serial.print("Weather data from this minute  : ");
+		#endif
+	  for (int j=1;j<15;j++) {
+	  	bool p = (filledBuffer >> j) & 1;
+		#ifdef VERBOSE_DEBUG
+	    Serial.print(p);
+	    #endif
+	  } 
+	  #ifdef VERBOSE_DEBUG
+	  Serial.println();
+	  #endif
+/*	  
+	  #ifdef VERBOSE_DEBUG
+	  Serial.print("Weather data as cipher         : ");
+	  #endif	  
+	  for (int j=1;j<43;j++){
+		bool p = (weatherBuffer >> j) & 1;
+		#ifdef VERBOSE_DEBUG
+	    Serial.print(p);
+	    #endif
+	  }
+	  #ifdef VERBOSE_DEBUG
+	  Serial.println(" ");
+	  #endif
+*/
+	  if ((time.Minute+2)%3 == 1) {
+	  #ifdef VERBOSE_DEBUG
+	  Serial.print("Time data acting as key        : ");
+	  #endif
+	  for (int j=0;j<44;j++){
+		bool p = (keyBuffer >> j) & 1;
+		#ifdef VERBOSE_DEBUG
+		Serial.print(p);
+		#endif	
+	  }
+	  #ifdef VERBOSE_DEBUG
+	  Serial.println();
+	  #endif
+      }	  
+	  
 	  return true;
+
 	} else {
 	  //Parity incorrect
 	  return false;
@@ -304,14 +407,14 @@ bool DCF77::processBuffer(void) {
  * Note, this only returns an time once, until the next update
  */
 time_t DCF77::getTime(void)
-{
+{	
 	if (!receivedTimeUpdate()) {
 		return(0);
 	} else {
 		// Send out time, taking into account the difference between when the DCF time was received and the current time
 		time_t currentTime =latestupdatedTime + (now() - processingTimestamp);
 		return(currentTime);
-	}
+	}	
 }
 
 /**
@@ -330,11 +433,6 @@ time_t DCF77::getUTCTime(void)
 	}
 }
 
-int DCF77::getSummerTime(void) 
-{
-  return (CEST)?1:0;
-} 
-
 /**
  * Initialize parameters
  */
@@ -352,11 +450,15 @@ volatile time_t DCF77::filledTimestamp= 0;
 int DCF77::bufferPosition = 0;
 unsigned long long DCF77::runningBuffer = 0;
 unsigned long long DCF77::processingBuffer = 0;
+unsigned long long DCF77::weatherBuffer =0;
+unsigned long long DCF77::keyBuffer=0;
+unsigned int DCF77::DCFminute=0;
+unsigned int DCF77::DCFhour=0;
 
 // Pulse flanks
 int DCF77::leadingEdge=0;
 int DCF77::trailingEdge=0;
-int DCF77::PreviousLeadingEdge=0;
+long DCF77::PreviousLeadingEdge=0;
 bool DCF77::Up= false;
 
 // DCF77 and internal timestamps
