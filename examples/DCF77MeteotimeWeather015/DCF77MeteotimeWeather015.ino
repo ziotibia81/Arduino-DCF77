@@ -28,7 +28,7 @@
   
 
 #include <DCF77.h>                            // https://github.com/thijse/Arduino-Libraries/downloads
-#include <Time.h>                             // http://www.arduino.cc/playground/Code/Time
+#include <TimeLib.h>                          // https://github.com/PaulStoffregen/Time
 #include <avr/pgmspace.h>
 #include <Flash.h>                            // http://arduiniana.org/libraries/flash/
 
