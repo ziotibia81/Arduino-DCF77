@@ -1,5 +1,5 @@
 # Arduino DCF77 library
-[![Build Status](https://github.com/ziotibia81/Arduino-DCF77/actions/workflows/githubci.yml/badge.svg?branch=master)]([https://travis-ci.org/thijse/Arduino-DCF77](https://github.com/ziotibia81/Arduino-DCF77/actions/workflows/githubci.yml))
+[![Build Status](https://github.com/ziotibia81/Arduino-DCF77/actions/workflows/githubci.yml/badge.svg?branch=master)](https://github.com/ziotibia81/Arduino-DCF77/actions/workflows/githubci.yml)
 [![License: LGPL v21](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)
 
 The DCF77 library adds the ability to read and decode the atomic time broadcasted by the 
