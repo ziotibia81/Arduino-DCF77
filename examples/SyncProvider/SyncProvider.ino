@@ -23,7 +23,7 @@
 #define DCF_INTERRUPT 0		 // Interrupt number associated with pin
 
 time_t prevDisplay = 0;          // when the digital clock was displayed
-time_t time;
+
 DCF77 DCF = DCF77(DCF_PIN,DCF_INTERRUPT);
 
 
