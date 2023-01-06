@@ -91,7 +91,7 @@ void printDigits(int digits){
   Serial.print(digits);
 }
 
-unsigned long getDCFTime()
+time_t getDCFTime()
 { 
   time_t DCFtime = DCF.getUTCTime(); // Convert from UTC
   
