@@ -8,8 +8,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2 
-      # - uses: Arduino-CI/action@stable-1.x
+      - uses: actions/checkout@v3 
+      - uses: Arduino-CI/action@stable-1.x
       # Temporary fix for pip error and Arduino-CI 1.4.0 until PR
       # will be merged in official repository.
-      - uses: ziotibia81/arduino-ci-action@fix-pip_bump14_pr
+      #- uses: ziotibia81/arduino-ci-action@fix-pip_bump14_pr
